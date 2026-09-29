@@ -1,7 +1,7 @@
 {
   "name": "berrywiki-assistant",
   "description": "BerryWiki 知识助手：在浏览器里向 OneBerryWiki 知识库提问、剪藏网页、Markdown 速记",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "type": "module",
   "scripts": {

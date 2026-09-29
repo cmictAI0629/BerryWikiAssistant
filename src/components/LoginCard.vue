@@ -11,7 +11,7 @@
         <p class="lc-sub">知识库问答 · 网页剪藏 · Markdown 速记</p>
 
         <div class="lc-buttons">
-          <button type="button" class="lc-btn lc-btn--solid" @click="toForm">
+          <button type="button" class="lc-btn lc-btn--solid" @click="toForm()">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>
             登录 OneBerryWiki
           </button>
@@ -38,13 +38,19 @@
         <label class="lc-label" for="lc-url">服务器地址</label>
         <div class="lc-field">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>
-          <input id="lc-url" ref="urlInput" v-model="baseUrl" placeholder="网页地址，如 http://10.0.0.8:15481" autocomplete="url" spellcheck="false" />
+          <input id="lc-url" ref="urlInput" v-model="baseUrl" placeholder="网页地址，如 http://10.0.0.8:15481" autocomplete="url" spellcheck="false"
+            @paste="onPaste($event, 'url')" @input="detected = false" />
         </div>
+        <p v-if="detected" class="lc-detected">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>
+          已从当前网页识别出服务器地址
+        </p>
 
         <label class="lc-label" for="lc-key">API Key</label>
         <div class="lc-field">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>
-          <input id="lc-key" ref="keyInput" v-model="apiKey" :type="showKey ? 'text' : 'password'" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+          <input id="lc-key" ref="keyInput" v-model="apiKey" :type="showKey ? 'text' : 'password'" placeholder="sk-…" autocomplete="off" spellcheck="false"
+            @paste="onPaste($event, 'key')" />
           <button type="button" class="lc-eye" :title="showKey ? '隐藏' : '显示'" @click="showKey = !showKey">
             <svg v-if="showKey" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
             <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
@@ -66,9 +72,9 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { browser } from 'wxt/browser'
-import { connect } from '@/lib/connect'
+import { connect, detectServerFromActiveTab, keyDraftItem, loginDraftItem } from '@/lib/connect'
 import { getSettings, webBaseUrl } from '@/lib/settings'
 import type { Workspace } from '@/lib/workspace'
 
@@ -87,18 +93,54 @@ const loading = ref(false)
 const error = ref('')
 const urlInput = ref<HTMLInputElement>()
 const keyInput = ref<HTMLInputElement>()
+const detected = ref(false)
 
 onMounted(async () => {
-  // 退出登录时服务器地址是留着的，填回来
-  baseUrl.value = webBaseUrl((await getSettings()).baseUrl)
+  // 草稿优先（上次填到一半被关掉了），其次是退出登录时留下的服务器地址
+  const [draft, keyDraft, settings] = await Promise.all([loginDraftItem.getValue(), keyDraftItem.getValue(), getSettings()])
+  baseUrl.value = draft?.baseUrl || webBaseUrl(settings.baseUrl)
+  apiKey.value = keyDraft
+  if (draft?.form) void toForm(false)
+  // 以下的变化才记进草稿
+  watch([baseUrl, step], () => void loginDraftItem.setValue({ baseUrl: baseUrl.value.trim(), form: step.value === 'form' }))
+  watch(apiKey, (v) => void keyDraftItem.setValue(v.trim()))
+  if (!baseUrl.value) {
+    const origin = await detectServerFromActiveTab()
+    if (origin && !baseUrl.value) {
+      baseUrl.value = origin
+      detected.value = true
+      if (step.value === 'form') focusEmpty()
+    }
+  }
 })
 
-async function toForm() {
+async function toForm(animate = true) {
   step.value = 'form'
   error.value = ''
   await nextTick()
   // Transition 是 out-in，等新表单挂上再聚焦
-  setTimeout(() => (baseUrl.value ? keyInput : urlInput).value?.focus(), 220)
+  setTimeout(focusEmpty, animate ? 220 : 30)
+}
+
+function focusEmpty() {
+  ;(baseUrl.value ? keyInput : urlInput).value?.focus()
+}
+
+/** 粘贴放错了格子：Key 粘进地址栏、地址粘进 Key 栏，自动挪到对的地方。 */
+function onPaste(e: ClipboardEvent, field: 'url' | 'key') {
+  const text = e.clipboardData?.getData('text')?.trim() || ''
+  const isKey = /^sk-\S+$/.test(text)
+  const isUrl = /^(https?:\/\/)?[\w.-]+(:\d+)?(\/\S*)?$/i.test(text) && !isKey && /[.:]/.test(text)
+  if (field === 'url' && isKey) {
+    e.preventDefault()
+    apiKey.value = text
+    urlInput.value?.focus()
+  } else if (field === 'key' && isUrl) {
+    e.preventDefault()
+    baseUrl.value = text
+    detected.value = false
+    keyInput.value?.focus()
+  }
 }
 
 async function submit() {
@@ -289,6 +331,15 @@ async function submit() {
 }
 
 .lc-eye:hover { color: #0e7490; }
+
+.lc-detected {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  opacity: 0.95;
+}
 
 .lc-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; opacity: 0.85; }
 
