@@ -53,23 +53,116 @@ function tidy(markdown: string): string {
     .trim()
 }
 
-/** 智能剪藏：用 Readability 提取正文，转成 Markdown。提取不到正文时退回整页文字。 */
-export function extractArticle(doc: Document = document): ExtractResult {
+/** 用 Readability 提取正文，转成 Markdown；提取不到返回 null。 */
+export function readArticle(doc: Document = document): ExtractResult | null {
   const clone = doc.cloneNode(true) as Document
   const article = new Readability(clone, { charThreshold: 200 }).parse()
-  const title = (article?.title || doc.title || '').trim()
-  if (article?.content) {
-    const container = doc.createElement('div')
-    container.innerHTML = article.content
-    absolutize(container, doc.baseURI)
-    return {
-      title,
-      markdown: tidy(turndown().turndown(container)),
-      excerpt: (article.excerpt || article.textContent || '').trim().slice(0, 200),
+  if (!article?.content) return null
+  const container = doc.createElement('div')
+  container.innerHTML = article.content
+  absolutize(container, doc.baseURI)
+  return {
+    title: (article.title || doc.title || '').trim(),
+    markdown: tidy(turndown().turndown(container)),
+    excerpt: (article.excerpt || article.textContent || '').trim().slice(0, 200),
+  }
+}
+
+/** 只取正文；提取不到正文时退回整页。 */
+export function extractArticle(doc: Document = document, ignore?: Element): ExtractResult {
+  return readArticle(doc) ?? extractPage(doc, ignore)
+}
+
+// ---- 整页：保留页面上所有正文性质的内容，去掉导航、侧栏、页眉页脚、按钮输入框等「界面零件」 ----
+
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED',
+  'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'NAV', 'ASIDE', 'DIALOG', 'LINK', 'META'])
+const SKIP_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary', 'menu', 'menubar', 'toolbar',
+  'tablist', 'dialog', 'alertdialog', 'search', 'tooltip'])
+/** 类名 / id 像界面零件的（Readability 的 unlikelyCandidates 思路）。只在它不占页面大半文字时才去掉。 */
+const CHROME_NAME = /(^|[-_\s])(aside|sidebar|side-bar|sidenav|navbar|nav|menu|menubar|breadcrumbs?|toolbar|topbar|footer|header|banner|cookie|popup|modal|tooltip|dropdown|share|social|advert|ads)([-_\s]|$)/i
+
+function skipElement(el: Element, bodyTextLen: number, inArticle: boolean): boolean {
+  if (SKIP_TAGS.has(el.tagName.toUpperCase())) return true
+  const role = el.getAttribute('role')
+  if (role && SKIP_ROLES.has(role)) return true
+  if (el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('hidden')) return true
+  if ((el as HTMLElement).isContentEditable && el.getAttribute('contenteditable') !== null) return true
+  if (!inArticle && (el.tagName === 'HEADER' || el.tagName === 'FOOTER')) return true
+  const style = getComputedStyle(el)
+  if (style.display === 'none' || style.visibility === 'hidden') return true
+  if (!inArticle) {
+    const name = `${typeof el.className === 'string' ? el.className : ''} ${el.id}`
+    if (CHROME_NAME.test(name) && (el.textContent?.length ?? 0) < bodyTextLen * 0.4) return true
+  }
+  return false
+}
+
+function cloneVisible(node: Node, doc: Document, bodyTextLen: number, ignore: Element | undefined, inArticle: boolean): Node | null {
+  if (node.nodeType === Node.TEXT_NODE) return node.cloneNode()
+  if (node.nodeType !== Node.ELEMENT_NODE) return null
+  const el = node as Element
+  if (el === ignore || skipElement(el, bodyTextLen, inArticle)) return null
+  const copy = el.cloneNode(false) as Element
+  const nextInArticle = inArticle || el.tagName === 'ARTICLE' || el.tagName === 'MAIN' || el.getAttribute('role') === 'main'
+  // 影子 DOM 里的内容（Web Components）也带上
+  const children = el.shadowRoot ? [...el.shadowRoot.childNodes, ...el.childNodes] : [...el.childNodes]
+  for (const child of children) {
+    const c = cloneVisible(child, doc, bodyTextLen, ignore, nextInArticle)
+    if (c) copy.appendChild(c)
+  }
+  return copy
+}
+
+/** 整页剪藏：按页面顺序保留所有可见的正文内容。 */
+export function extractPage(doc: Document = document, ignore?: Element): ExtractResult {
+  const body = doc.body
+  const container = doc.createElement('div')
+  if (body) {
+    const len = body.textContent?.length ?? 0
+    for (const child of [...body.childNodes]) {
+      const c = cloneVisible(child, doc, len, ignore, false)
+      if (c) container.appendChild(c)
     }
   }
-  const text = (doc.body?.innerText || '').trim()
-  return { title, markdown: text, excerpt: text.slice(0, 200) }
+  absolutize(container, doc.baseURI)
+  const markdown = tidy(turndown().turndown(container))
+  return { title: doc.title.trim(), markdown, excerpt: (container.textContent || '').trim().slice(0, 200) }
+}
+
+/** 页面自己声明是文章（新闻、博客）：这类页面整页有大量推荐、评论，默认只取正文。 */
+export function looksLikeArticlePage(doc: Document = document): boolean {
+  const ogType = doc.querySelector('meta[property="og:type"]')?.getAttribute('content') || ''
+  if (/article/i.test(ogType)) return true
+  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    if (/"@type"\s*:\s*"(News)?Article|"@type"\s*:\s*"BlogPosting"/.test(s.textContent || '')) return true
+  }
+  const bodyLen = doc.body?.textContent?.length ?? 0
+  const article = doc.querySelector('article')
+  return !!article && bodyLen > 0 && (article.textContent?.length ?? 0) > bodyLen * 0.5
+}
+
+export type ClipMode = 'article' | 'page'
+
+export interface SmartClip {
+  title: string
+  /** 正文（Readability）；提取不到为 null */
+  article: string | null
+  page: string
+  /** 默认用哪种：文章页用正文，其余（网页应用、对话页、列表页）用整页，免得漏内容 */
+  mode: ClipMode
+}
+
+/** 智能剪藏：两种都提取，按页面类型选默认的，剪藏窗口里可以切换。 */
+export function extractSmart(doc: Document = document, ignore?: Element): SmartClip {
+  const article = readArticle(doc)
+  const page = extractPage(doc, ignore)
+  return {
+    title: (article?.title || doc.title || '').trim(),
+    article: article?.markdown || null,
+    page: page.markdown,
+    mode: article && looksLikeArticlePage(doc) ? 'article' : 'page',
+  }
 }
 
 export interface Rect { left: number; top: number; width: number; height: number }

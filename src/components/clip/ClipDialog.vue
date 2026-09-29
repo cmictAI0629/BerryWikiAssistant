@@ -54,7 +54,14 @@
           </aside>
 
           <section class="cd__main">
-            <span class="cd__label">文档内容</span>
+            <div class="cd__main-head">
+              <span class="cd__label">文档内容</span>
+              <!-- 智能剪藏：正文（只取文章主体）和整页（页面上所有内容）可切换，各自的修改互不覆盖 -->
+              <div v-if="variants" class="cd__modes" role="tablist" aria-label="提取范围">
+                <button v-for="m in MODES" :key="m.key" type="button" role="tab" :aria-selected="clipMode === m.key"
+                  :class="{ on: clipMode === m.key }" :title="m.tip" @click="switchMode(m.key)">{{ m.label }}</button>
+              </div>
+            </div>
             <MarkdownEditor v-model="markdown" class="cd__editor" placeholder="没有提取到文字，可以在这里补充…" />
           </section>
         </div>
@@ -75,6 +82,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { browser } from 'wxt/browser'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import type { ClipMode } from '@/lib/extract'
 import { callBackground, type ClipContext, type SaveClipResult } from '@/lib/messages'
 
 const props = defineProps<{
@@ -83,6 +91,7 @@ const props = defineProps<{
   initialMarkdown: string
   source: string
   screenshot?: string
+  variants?: { article: string | null; page: string; mode: ClipMode }
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -96,6 +105,23 @@ const saving = ref(false)
 const saved = ref<SaveClipResult | null>(null)
 const error = ref('')
 const createdAt = new Date().toLocaleString('zh-CN', { hour12: false })
+
+const MODES: { key: ClipMode; label: string; tip: string }[] = [
+  { key: 'article', label: '正文', tip: '只保留文章主体，去掉推荐、评论等' },
+  { key: 'page', label: '整页', tip: '保留页面上所有内容（已去掉导航栏、侧栏、按钮等）' },
+]
+const clipMode = ref<ClipMode>(props.variants?.mode ?? 'page')
+const drafts: Record<ClipMode, string> = {
+  article: props.variants?.article ?? '',
+  page: props.variants?.page ?? '',
+}
+
+function switchMode(mode: ClipMode) {
+  if (mode === clipMode.value) return
+  drafts[clipMode.value] = markdown.value
+  clipMode.value = mode
+  markdown.value = drafts[mode]
+}
 
 const kbName = computed(() => ctx.value?.knowledgeBases.find((k) => k.id === kbId.value)?.name || '')
 const canSave = computed(() => !saving.value && !!kbId.value && (!!markdown.value.trim() || (!!props.screenshot && saveShot.value)))
@@ -225,6 +251,33 @@ function openOptions() {
 .cd__editor { flex: 1; min-height: 360px; }
 
 .cd__label { color: var(--bw-text-2); font-size: 12px; font-weight: 600; }
+
+.cd__main-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.cd__modes {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bw-text) 6%, transparent);
+}
+
+.cd__modes button {
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--bw-text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cd__modes button.on {
+  background: var(--bw-card);
+  color: var(--bw-brand);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
 
 .cd__input {
   width: 100%;

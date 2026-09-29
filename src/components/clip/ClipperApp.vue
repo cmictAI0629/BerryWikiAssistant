@@ -2,14 +2,15 @@
   <RegionSelector v-if="state.mode === 'selecting'" @confirm="onRegion" @cancel="close" />
   <div v-else-if="state.mode === 'working'" class="cw">{{ state.message }}</div>
   <ClipDialog v-else-if="state.mode === 'dialog'" :key="state.key" :heading="state.heading" :initial-title="state.title"
-    :initial-markdown="state.markdown" :source="state.source" :screenshot="state.screenshot" @close="close" />
+    :initial-markdown="state.markdown" :source="state.source" :screenshot="state.screenshot" :variants="state.variants"
+    @close="close" />
 </template>
 
 <script setup lang="ts">
 import { reactive } from 'vue'
 import ClipDialog from './ClipDialog.vue'
 import RegionSelector from './RegionSelector.vue'
-import { extractArticle, extractRegion, type Rect } from '@/lib/extract'
+import { extractRegion, extractSmart, type ClipMode, type Rect } from '@/lib/extract'
 import { callBackground, type ClipCommand } from '@/lib/messages'
 import TurndownService from 'turndown'
 
@@ -24,11 +25,13 @@ const state = reactive({
   markdown: '',
   source: '',
   screenshot: '' as string | undefined,
+  variants: undefined as { article: string | null; page: string; mode: ClipMode } | undefined,
 })
 
-function openDialog(heading: string, title: string, markdown: string, screenshot?: string) {
+function openDialog(heading: string, title: string, markdown: string, screenshot?: string,
+  variants?: { article: string | null; page: string; mode: ClipMode }) {
   Object.assign(state, {
-    mode: 'dialog', key: state.key + 1, heading, title, markdown, screenshot,
+    mode: 'dialog', key: state.key + 1, heading, title, markdown, screenshot, variants,
     source: location.href,
   })
 }
@@ -43,11 +46,12 @@ function run(cmd: ClipCommand) {
     state.mode = 'selecting'
   } else if (cmd.type === 'bw:smart-clip') {
     state.mode = 'working'
-    state.message = '正在提取正文…'
+    state.message = '正在提取网页内容…'
     // 让「提取中」先画出来再做同步的重活
     setTimeout(() => {
-      const r = extractArticle(document)
-      openDialog('智能剪藏', r.title || document.title, r.markdown)
+      const r = extractSmart(document, props.host())
+      const variants = r.article && r.article !== r.page ? { article: r.article, page: r.page, mode: r.mode } : undefined
+      openDialog('智能剪藏', r.title || document.title, r.mode === 'article' && r.article ? r.article : r.page, undefined, variants)
     }, 30)
   } else if (cmd.type === 'bw:selection-clip') {
     openDialog('保存选中内容', document.title, selectionMarkdown() || cmd.text)
