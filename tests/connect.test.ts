@@ -3,7 +3,7 @@ import { browser } from 'wxt/browser'
 import { detectServerFromActiveTab } from '@/lib/connect'
 
 const activeTab = (url: string) =>
-  vi.spyOn(browser.tabs, 'query').mockResolvedValue([{ url } as Awaited<ReturnType<typeof browser.tabs.query>>[number]])
+  vi.spyOn(browser.tabs, 'query').mockResolvedValue([{ url }] as never)
 
 const respond = (routes: Record<string, Response>) =>
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
