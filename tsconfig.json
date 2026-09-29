@@ -1,0 +1,16 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "types": [
+      "node"
+    ]
+  },
+  "exclude": [
+    "preview",
+    ".output",
+    "node_modules"
+  ]
+}
