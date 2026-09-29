@@ -56,7 +56,7 @@ describe('extractSmart', () => {
           <div class="composer"><textarea placeholder="输入问题"></textarea><button>发送</button></div>
           <div style="display:none">隐藏的内容</div>
         </div>
-      </body>`, 'http://36.140.144.144:15481/platform/chat/1')
+      </body>`, 'http://10.0.0.8:15481/platform/chat/1')
     const r = extractSmart(doc)
     expect(r.mode).toBe('page')
     expect(r.page).toContain('给我去知乎搜索中移集成')
