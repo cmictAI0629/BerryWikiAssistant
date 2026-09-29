@@ -2,6 +2,9 @@
   <!-- 未登录：整个弹出面板就是登录卡片 -->
   <LoginCard v-if="ready && !configured" class="pp-login" @done="onLogin" />
 
+  <!-- 设置：在弹出面板里原地打开 -->
+  <SettingsPanel v-else-if="view === 'settings'" class="pp-settings" @back="closeSettings" @logout="onLogout" />
+
   <div v-else class="pp">
     <template v-if="configured">
       <header class="pp-head">
@@ -19,13 +22,13 @@
           </button>
           <div v-if="menuOpen" class="pp-menu bw-card" @click="menuOpen = false">
             <button type="button" @click="openWeb()">打开 OneBerryWiki</button>
-            <button type="button" @click="openOptions">设置</button>
+            <button type="button" @click="view = 'settings'">设置</button>
             <button type="button" @click="openShortcuts">快捷键</button>
           </div>
         </div>
       </header>
 
-      <p v-if="error" class="pp-error">{{ error }} <a href="#" @click.prevent="openOptions">检查设置</a></p>
+      <p v-if="error" class="pp-error">{{ error }} <a href="#" @click.prevent="view = 'settings'">检查设置</a></p>
 
       <!-- 知识库卡片：最近文档 + 剪藏 -->
       <section class="pp-kb bw-card">
@@ -91,6 +94,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { browser } from 'wxt/browser'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import LoginCard from '@/components/LoginCard.vue'
+import SettingsPanel from '@/components/SettingsPanel.vue'
 import { listRecentKnowledge, type Knowledge } from '@/lib/api'
 import { activeTabId, sendClip } from '@/lib/clip'
 import { setPendingQuestion, setPendingTab } from '@/lib/pending'
@@ -99,6 +103,7 @@ import { cachedWorkspace, displayName, loadWorkspace, relativeTime, writableKnow
 
 const ready = ref(false)
 const configured = ref(false)
+const view = ref<'main' | 'settings'>('main')
 const ws = ref<Workspace | null>(null)
 const error = ref('')
 const menuOpen = ref(false)
@@ -125,6 +130,20 @@ onMounted(async () => {
 async function onLogin() {
   error.value = ''
   await init()
+}
+
+async function onLogout() {
+  view.value = 'main'
+  ws.value = null
+  await init()
+}
+
+// 设置里可能改了默认知识库 / 智能体，回来时重新读一遍
+async function closeSettings() {
+  view.value = 'main'
+  const s = await getSettings()
+  kbId.value = s.defaultKbId || kbId.value
+  agentId.value = s.defaultAgentId || agentId.value
 }
 
 async function init() {
@@ -186,11 +205,6 @@ function ask() {
   void browser.sidePanel.open({ windowId })
   void setPendingQuestion(q, { agentId: agentId.value, knowledgeBaseIds: askKbId.value ? [askKbId.value] : [] })
     .then(() => window.close())
-}
-
-function openOptions() {
-  void browser.runtime.openOptionsPage()
-  window.close()
 }
 
 function openWeb(kb?: string) {
@@ -389,6 +403,7 @@ function openShortcuts() {
 .pp-send:disabled { background: var(--bw-brand-soft-2); color: color-mix(in srgb, var(--bw-brand) 50%, transparent); cursor: default; }
 
 .pp-login { width: 380px; min-height: 500px; }
+.pp-settings { width: 380px; height: 580px; }
 
 .pp-foot { color: var(--bw-text-3); font-size: 11px; text-align: center; }
 </style>

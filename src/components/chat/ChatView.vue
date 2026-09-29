@@ -26,12 +26,19 @@
           </details>
           <ul v-if="m.steps?.length" class="msg__steps">
             <li v-for="s in m.steps" :key="s.id" :class="`is-${s.status}`">
-              <span class="msg__step-dot" />{{ toolLabel(s.name) }}
-              <small v-if="s.status === 'failed'">失败</small>
+              <div class="msg__step-head">
+                <span class="msg__step-dot" />
+                <span class="msg__step-name">{{ toolLabel(s.name) }}<template v-if="s.detail">：「{{ s.detail }}」</template></span>
+                <small v-if="s.status === 'failed'">失败</small>
+              </div>
+              <div v-if="s.result" class="msg__step-result">{{ s.result }}</div>
             </li>
           </ul>
           <div v-if="m.content" class="msg__answer bw-md" v-html="renderMarkdown(m.content)" />
-          <div v-else-if="m.streaming && !m.thinking && !m.steps?.length" class="msg__typing"><i /><i /><i /></div>
+          <div v-else-if="m.streaming && !m.thinking" class="msg__typing">
+            <i /><i /><i />
+            <span v-if="waited >= 5">{{ m.steps?.length ? '正在生成回答' : '正在思考' }}… {{ waited }} 秒</span>
+          </div>
           <p v-if="m.error" class="msg__error">{{ m.error }}</p>
           <details v-if="m.references?.length" class="msg__refs">
             <summary>引用了 {{ m.references.length }} 条资料</summary>
@@ -95,7 +102,15 @@ import {
 import { renderMarkdown } from '@/lib/markdown'
 import { saveSettings, webBaseUrl, getSettings } from '@/lib/settings'
 
-interface Step { id: string; name: string; status: 'running' | 'done' | 'failed' }
+interface Step {
+  id: string
+  name: string
+  status: 'running' | 'done' | 'failed'
+  /** 工具参数里的检索问句 / 网址等，显示在步骤名后面 */
+  detail?: string
+  /** 工具结果的一句话（如「检索到 5 条相关内容」） */
+  result?: string
+}
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -125,6 +140,8 @@ const copied = ref(-1)
 const scroller = ref<HTMLElement>()
 const input = ref<HTMLTextAreaElement>()
 let controller: AbortController | null = null
+const waited = ref(0)
+let waitTimer: ReturnType<typeof setInterval> | undefined
 let assistantMessageId = ''
 
 const currentAgent = computed(() => props.agents.find((a) => a.id === agentId.value) || null)
@@ -153,6 +170,7 @@ function scrollToEnd() {
 }
 
 const TOOL_LABELS: Record<string, string> = {
+  query_understand: '理解问题',
   knowledge_search: '检索知识库',
   search_knowledge: '检索知识库',
   search_memory: '回忆历史对话',
@@ -171,6 +189,25 @@ const TOOL_LABELS: Record<string, string> = {
   shell_exec: '在沙箱中执行',
   read_file: '读取文件',
 }
+/** 工具参数里最能说明「在做什么」的一项 */
+function stepDetail(args: unknown): string {
+  if (!args || typeof args !== 'object') return ''
+  const a = args as Record<string, unknown>
+  const pick = [a.query, a.queries, a.keyword, a.keywords, a.pattern, a.url, a.question, a.title]
+    .map((v) => (Array.isArray(v) ? v.join('、') : v))
+    .find((v) => typeof v === 'string' && v.trim()) as string | undefined
+  if (!pick) return ''
+  const t = pick.replace(/\s+/g, ' ').trim()
+  return t.length > 40 ? `${t.slice(0, 40)}…` : t
+}
+
+function stepResult(e: StreamEvent): string {
+  const text = (typeof e.content === 'string' && e.content) || (typeof e.data?.output === 'string' && e.data.output) || ''
+  const t = text.replace(/\s+/g, ' ').trim()
+  if (!t || t.startsWith('Calling tool')) return ''
+  return t.length > 60 ? `${t.slice(0, 60)}…` : t
+}
+
 function toolLabel(name: string) {
   return TOOL_LABELS[name] || (name.startsWith('wiki_') ? '查阅 Wiki' : `调用 ${name}`)
 }
@@ -254,6 +291,9 @@ async function send(text?: string) {
 
   controller = new AbortController()
   assistantMessageId = ''
+  waited.value = 0
+  clearInterval(waitTimer)
+  waitTimer = setInterval(() => { waited.value += 1 }, 1000)
   try {
     if (!sessionId.value) sessionId.value = await createSession(q.slice(0, 40))
     await askStream(sessionId.value, {
@@ -267,6 +307,7 @@ async function send(text?: string) {
   } catch (e) {
     msg.error = (e as Error).message
   } finally {
+    clearInterval(waitTimer)
     msg.streaming = false
     busy.value = false
     controller = null
@@ -286,13 +327,21 @@ function onEvent(msg: Message, e: StreamEvent) {
     case 'answer':
       if (e.content) msg.content += e.content
       break
-    case 'tool_call':
-      msg.steps!.push({ id: e.data?.tool_call_id || String(msg.steps!.length), name: e.data?.tool_name || '工具', status: 'running' })
-      // 工具调用前的回答只是开场白，最终答案以 complete 里的为准
+    case 'tool_call': {
+      const id = e.data?.tool_call_id || String(msg.steps!.length)
+      // 同一个调用可能先后推两次（参数补全），只保留一条
+      const existing = msg.steps!.find((s) => s.id === id)
+      const detail = stepDetail(e.data?.arguments)
+      if (existing) { if (detail) existing.detail = detail }
+      else msg.steps!.push({ id, name: e.data?.tool_name || '工具', status: 'running', detail })
       break
+    }
     case 'tool_result': {
       const step = msg.steps!.find((s) => s.id === e.data?.tool_call_id)
-      if (step) step.status = e.data?.success === false ? 'failed' : 'done'
+      if (step) {
+        step.status = e.data?.success === false ? 'failed' : 'done'
+        step.result = e.data?.success === false ? (e.data?.error || stepResult(e)) : stepResult(e)
+      }
       collectReferences(msg, e.data)
       break
     }
@@ -301,6 +350,14 @@ function onEvent(msg: Message, e: StreamEvent) {
       break
     case 'error':
       msg.error = e.content || e.data?.error || '回答出错了'
+      break
+    case 'tool_approval_required':
+    case 'mcp_oauth_required':
+    case 'install_prompt':
+      msg.error = e.response_type === 'mcp_oauth_required'
+        ? '这个智能体用到的 MCP 服务需要授权，请到 OneBerryWiki 网页端完成授权后再提问。'
+        : '这个智能体要调用的工具需要人工确认，扩展里没法批准。请换一个智能体，或到 OneBerryWiki 网页端使用。'
+      void stop()
       break
     case 'complete':
       if (typeof e.data?.final_content === 'string' && e.data.final_content) msg.content = e.data.final_content
@@ -432,7 +489,16 @@ defineExpose({ ask, reset })
 .msg__thinking .bw-md { margin-top: 6px; font-size: 12px; }
 
 .msg__steps { margin: 0 0 8px; padding: 0; list-style: none; font-size: 12px; color: var(--bw-text-2); }
-.msg__steps li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.msg__steps li {
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--bw-line);
+  border-radius: 10px;
+  background: var(--bw-card);
+}
+.msg__step-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.msg__step-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg__step-result { margin: 4px 0 0 12px; color: var(--bw-text-3); font-size: 11.5px; }
 .msg__steps small { color: var(--bw-danger); }
 
 .msg__step-dot {
@@ -450,7 +516,8 @@ defineExpose({ ask, reset })
 .msg__answer { font-size: 14px; }
 .msg__error { margin: 6px 0 0; color: var(--bw-danger); font-size: 13px; }
 
-.msg__typing { display: inline-flex; gap: 4px; padding: 6px 0; }
+.msg__typing { display: inline-flex; align-items: center; gap: 4px; padding: 6px 0; }
+.msg__typing span { margin-left: 6px; color: var(--bw-text-3); font-size: 12px; }
 .msg__typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--bw-text-3); animation: pulse 1s ease-in-out infinite; }
 .msg__typing i:nth-child(2) { animation-delay: 0.15s; }
 .msg__typing i:nth-child(3) { animation-delay: 0.3s; }

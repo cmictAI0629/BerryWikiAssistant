@@ -26,6 +26,9 @@ export type BackgroundRequest =
   | { type: 'bw:clip-context' }
   | { type: 'bw:save-clip'; payload: SaveClipPayload }
   | { type: 'bw:open-options' }
+  /** 选中文字工具条：保存选中内容（打开剪藏窗口）/ 拿选中内容去问知识助手（打开侧边栏） */
+  | { type: 'bw:selection-save'; text: string }
+  | { type: 'bw:selection-ask'; text: string }
 
 export interface ClipContext {
   configured: boolean

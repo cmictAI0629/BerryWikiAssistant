@@ -2,7 +2,9 @@
   <!-- 未登录：登录卡片铺满侧边栏 -->
   <LoginCard v-if="ready && !configured" class="sp-login" @done="init" />
 
-  <div v-else class="sp">
+  <SettingsPanel v-else-if="view === 'settings'" class="sp-settings" @back="closeSettings" @logout="onLogout" />
+
+  <div v-show="ready && configured && view === 'main'" class="sp">
     <header class="sp-head">
       <img class="sp-head__logo" :src="logo" alt="" />
       <div class="sp-tabs" role="tablist">
@@ -13,7 +15,7 @@
       <button v-if="tab === 'chat'" type="button" class="bw-icon-btn" title="新对话" @click="chat?.reset()">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
-      <button type="button" class="bw-icon-btn" title="设置" @click="openOptions">
+      <button type="button" class="bw-icon-btn" title="设置" @click="view = 'settings'">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
     </header>
@@ -34,6 +36,7 @@ import { nextTick, onMounted, reactive, ref } from 'vue'
 import { browser } from 'wxt/browser'
 import ChatView from '@/components/chat/ChatView.vue'
 import LoginCard from '@/components/LoginCard.vue'
+import SettingsPanel from '@/components/SettingsPanel.vue'
 import NoteView from '@/components/NoteView.vue'
 import { pendingQuestionItem, pendingTabItem, takePendingQuestion, takePendingTab, type SidePanelTab } from '@/lib/pending'
 import { DEFAULT_SETTINGS, getSettings, isConfigured, settingsItem } from '@/lib/settings'
@@ -43,6 +46,7 @@ const logo = browser.runtime.getURL('/icon/48.png')
 const tab = ref<SidePanelTab>('chat')
 const ready = ref(false)
 const configured = ref(false)
+const view = ref<'main' | 'settings'>('main')
 const ws = ref<Workspace | null>(null)
 const error = ref('')
 const settings = reactive({ ...DEFAULT_SETTINGS })
@@ -83,8 +87,15 @@ onMounted(async () => {
   settingsItem.watch(() => void init())
 })
 
-function openOptions() {
-  void browser.runtime.openOptionsPage()
+async function closeSettings() {
+  view.value = 'main'
+  Object.assign(settings, await getSettings())
+}
+
+async function onLogout() {
+  view.value = 'main'
+  ws.value = null
+  await init()
 }
 </script>
 
@@ -130,5 +141,6 @@ function openOptions() {
 .sp-main { flex: 1; min-height: 0; }
 
 .sp-login { height: 100vh; }
+.sp-settings { height: 100vh; }
 .sp-error { margin: 10px 14px 0; color: var(--bw-danger); font-size: 12px; }
 </style>

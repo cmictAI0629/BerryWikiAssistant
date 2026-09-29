@@ -32,7 +32,7 @@ export default defineBackground(() => {
     if (info.menuItemId === MENU.askSelection) {
       // 打开侧边栏必须在用户手势里同步调用，先开再写待问问题（侧边栏会监听变化）
       void browser.sidePanel.open({ tabId: tab.id })
-      await setPendingQuestion(`请结合知识库解释：\n\n${info.selectionText ?? ''}`)
+      await setPendingQuestion(askSelectionQuery(info.selectionText ?? ''))
       return
     }
     if (info.menuItemId === MENU.smartClip) await sendClip(tab.id, { type: 'bw:smart-clip' })
@@ -51,17 +51,31 @@ export default defineBackground(() => {
   })
 
   browser.runtime.onMessage.addListener((msg: BackgroundRequest, sender, sendResponse) => {
-    handle(msg, sender.tab?.windowId)
+    // 选中文字「问知识助手」：侧边栏只能在用户手势里打开，必须在这里同步调用，不能等到 await 之后
+    if (msg.type === 'bw:selection-ask' && sender.tab?.id) {
+      browser.sidePanel.open({ tabId: sender.tab.id }).catch(() => {})
+    }
+    handle(msg, sender.tab)
       .then((data) => sendResponse({ ok: true, data } satisfies BackgroundResponse<unknown>))
       .catch((e: Error) => sendResponse({ ok: false, error: e.message || String(e) } satisfies BackgroundResponse<unknown>))
     return true // 异步回复
   })
 })
 
-async function handle(msg: BackgroundRequest, windowId?: number): Promise<unknown> {
+function askSelectionQuery(text: string): string {
+  return `请结合知识库解释：\n\n${text.trim()}`
+}
+
+async function handle(msg: BackgroundRequest, tab?: { id?: number; windowId?: number }): Promise<unknown> {
   switch (msg.type) {
     case 'bw:capture':
-      return browser.tabs.captureVisibleTab(windowId ?? browser.windows.WINDOW_ID_CURRENT, { format: 'png' })
+      return browser.tabs.captureVisibleTab(tab?.windowId ?? browser.windows.WINDOW_ID_CURRENT, { format: 'png' })
+    case 'bw:selection-save':
+      if (tab?.id) await sendClip(tab.id, { type: 'bw:selection-clip', text: msg.text })
+      return null
+    case 'bw:selection-ask':
+      await setPendingQuestion(askSelectionQuery(msg.text))
+      return null
     case 'bw:clip-context': {
       const s = await getSettings()
       if (!isConfigured(s)) return { configured: false, knowledgeBases: [], defaultKbId: '', webBaseUrl: '' } satisfies ClipContext

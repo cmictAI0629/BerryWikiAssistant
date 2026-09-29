@@ -9,6 +9,10 @@ export interface Settings {
   defaultKbId: string
   /** 问答默认用的智能体 */
   defaultAgentId: string
+  /** 网页上选中文字时弹出「保存 / 问知识助手」工具条 */
+  selectionToolbar: boolean
+  /** 不弹工具条的网站（hostname） */
+  selectionDisabledHosts: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -16,6 +20,8 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   defaultKbId: '',
   defaultAgentId: '',
+  selectionToolbar: true,
+  selectionDisabledHosts: [],
 }
 
 export const settingsItem = storage.defineItem<Settings>('local:settings', { fallback: DEFAULT_SETTINGS })
