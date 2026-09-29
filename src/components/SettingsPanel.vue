@@ -11,7 +11,7 @@
     <div class="st-body">
       <section class="st-group">
         <div class="st-row st-account">
-          <span class="st-avatar">{{ initial }}</span>
+          <UserAvatar :me="ws?.me" :size="40" />
           <div class="st-account__who">
             <b>{{ ws ? displayName(ws.me) : '正在连接…' }}</b>
             <small>{{ ws?.me.tenant?.name || web }}</small>
@@ -86,6 +86,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { browser } from 'wxt/browser'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { logout, pickDefaults } from '@/lib/connect'
 import { getSettings, saveSettings, settingsItem, webBaseUrl, type Settings } from '@/lib/settings'
 import { cachedWorkspace, displayName, loadWorkspace, writableKnowledgeBases, type Workspace } from '@/lib/workspace'
@@ -106,7 +107,6 @@ interface Command { name?: string; description?: string; shortcut?: string }
 const commands = ref<Command[]>([])
 
 const writableKbs = computed(() => writableKnowledgeBases(ws.value?.knowledgeBases || []))
-const initial = computed(() => [...(ws.value ? displayName(ws.value.me) : 'B')][0]?.toUpperCase() || 'B')
 
 function applySettings(s: Settings) {
   web.value = webBaseUrl(s.baseUrl)
@@ -231,18 +231,6 @@ async function signOut() {
 .st-value--brand { color: var(--bw-brand); }
 
 .st-account { gap: 10px; min-height: 60px; }
-
-.st-avatar {
-  display: grid;
-  flex-shrink: 0;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #22d3ee, var(--bw-brand) 55%, var(--bw-brand-strong));
-  color: #fff;
-  font-weight: 700;
-}
 
 .st-account__who { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .st-account__who b, .st-account__who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -8,7 +8,7 @@
   <div v-else class="pp">
     <template v-if="configured">
       <header class="pp-head">
-        <span class="pp-avatar">{{ initial }}</span>
+        <UserAvatar :me="ws?.me" :size="34" />
         <div class="pp-who">
           <b>{{ name }}</b>
           <small v-if="ws?.me.tenant?.name">{{ ws.me.tenant.name }}</small>
@@ -94,6 +94,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { browser } from 'wxt/browser'
 import AgentAvatar from '@/components/AgentAvatar.vue'
 import LoginCard from '@/components/LoginCard.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
 import { listRecentKnowledge, type Knowledge } from '@/lib/api'
 import { activeTabId, sendClip } from '@/lib/clip'
@@ -117,7 +118,6 @@ let windowId: number | undefined
 let baseUrl = ''
 
 const name = computed(() => displayName(ws.value?.me))
-const initial = computed(() => [...name.value][0]?.toUpperCase() || 'B')
 const writableKbs = computed(() => writableKnowledgeBases(ws.value?.knowledgeBases || []))
 const currentAgent = computed(() => ws.value?.agents.find((a) => a.id === agentId.value) || null)
 
@@ -234,17 +234,6 @@ function openShortcuts() {
   align-items: center;
   gap: 10px;
   padding: 2px 2px 0;
-}
-
-.pp-avatar {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--bw-brand) 60%, #38bdf8), var(--bw-brand));
-  color: #fff;
-  font-weight: 700;
 }
 
 .pp-who { display: flex; flex: 1; flex-direction: column; min-width: 0; }
