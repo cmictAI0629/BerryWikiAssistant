@@ -12,7 +12,7 @@
       <h2>连接 OneBerryWiki</h2>
       <label class="bw-label" for="bw-url">服务器地址</label>
       <input id="bw-url" v-model="form.baseUrl" class="bw-input" placeholder="例如 http://10.0.0.8:15481 或 https://wiki.example.com" />
-      <p class="op-hint">填网页地址或 API 地址都行，会自动补上 <code>/api/v1</code>。在 OneBerryWiki「设置 → API 集成」里可以复制。</p>
+      <p class="op-hint">填网页地址或 API 地址都行，会自动补上 <code>/api/v1</code>。在 OneBerryWiki「设置 → API 信息」里可以复制。</p>
 
       <label class="bw-label" for="bw-key">API Key</label>
       <div class="op-key">
@@ -21,7 +21,7 @@
         <button type="button" class="bw-btn" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
       </div>
       <p class="op-hint">
-        在「设置 → API 集成」新建一个 Key。建议单独给插件建一个，能力至少勾选<b>检索、对话、入库</b>，
+        在「设置 → API 信息」新建一个 Key。建议单独给插件建一个，能力至少勾选<b>检索知识库、对话能力、写入知识库内容</b>，
         也可以直接给完整权限。Key 只保存在这台电脑的浏览器里。
       </p>
 

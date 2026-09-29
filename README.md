@@ -37,7 +37,7 @@ Chrome / Edge 扩展（Manifest V3）。
 3. 点「加载已解压的扩展程序」，选择解压出来的文件夹；
 4. 安装后会自动打开设置页，填写：
    - **服务器地址**：OneBerryWiki 的网页地址即可（如 `http://10.0.0.8:15481`），会自动补上 `/api/v1`；
-   - **API Key**：在 OneBerryWiki「设置 → API 集成」新建。建议单独为插件建一个，能力至少勾选 **检索、对话、入库**；
+   - **API Key**：在 OneBerryWiki「设置 → API 信息」新建。建议单独为插件建一个，能力至少勾选 **检索知识库、对话能力、写入知识库内容**；
 5. 点「保存并测试连接」，通过后选择默认知识库和默认智能体。
 
 API Key 只保存在本机浏览器里。
@@ -82,11 +82,11 @@ src/
 | 用途 | 接口 | Key 能力 |
 | --- | --- | --- |
 | 账号信息 | `GET /auth/me` | — |
-| 知识库、最近文档 | `GET /knowledge-bases`、`GET /knowledge-bases/:id/knowledge` | 检索 |
-| 智能体 | `GET /agents` | 对话 |
-| 问答 | `POST /sessions`、`POST /agent-chat/:session_id`（SSE）、`POST /sessions/:id/stop` | 对话 |
-| 剪藏、速记 | `POST /knowledge-bases/:id/knowledge/manual`（`status: publish`） | 入库 |
-| 截图 | `POST /knowledge-bases/:id/knowledge/file` | 入库 |
+| 知识库、最近文档 | `GET /knowledge-bases`、`GET /knowledge-bases/:id/knowledge` | 检索知识库 |
+| 智能体 | `GET /agents` | 对话能力（或读取智能体） |
+| 问答 | `POST /sessions`、`POST /agent-chat/:session_id`（SSE）、`POST /sessions/:id/stop` | 对话能力 |
+| 剪藏、速记 | `POST /knowledge-bases/:id/knowledge/manual`（`status: publish`） | 写入知识库内容 |
+| 截图 | `POST /knowledge-bases/:id/knowledge/file` | 写入知识库内容 |
 
 插件建的会话归属于 API Key，不会出现在网页端的对话历史里。
 

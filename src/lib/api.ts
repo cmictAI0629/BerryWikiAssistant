@@ -44,7 +44,7 @@ async function request<T>(path: string, init: RequestInit = {}, settings?: Setti
 
 function friendlyError(status: number, message: string): string {
   if (status === 401) return 'API Key 无效或已被吊销，请在设置里重新填写'
-  if (status === 403 && /scope/i.test(message)) return 'API Key 的权限不够：需要「检索」「对话」「入库」能力，或完整权限'
+  if (status === 403 && /scope/i.test(message)) return 'API Key 的权限不够：需要「检索知识库」「对话能力」「写入知识库内容」，或完整权限'
   return message
 }
 
