@@ -1,14 +1,9 @@
 <template>
-  <div class="pp">
-    <!-- 未连接 -->
-    <section v-if="!configured && ready" class="pp-welcome bw-card">
-      <img class="pp-welcome__logo" :src="logo" alt="" />
-      <h1>连接你的 OneBerryWiki</h1>
-      <p>填写服务器地址和 API Key 后，就能在任意网页向知识库提问、剪藏网页、记速记。</p>
-      <button type="button" class="bw-btn bw-btn--primary" @click="openOptions">去设置</button>
-    </section>
+  <!-- 未登录：整个弹出面板就是登录卡片 -->
+  <LoginCard v-if="ready && !configured" class="pp-login" @done="onLogin" />
 
-    <template v-else-if="configured">
+  <div v-else class="pp">
+    <template v-if="configured">
       <header class="pp-head">
         <span class="pp-avatar">{{ initial }}</span>
         <div class="pp-who">
@@ -87,7 +82,7 @@
       </section>
     </template>
 
-    <footer class="pp-foot">Powered by OneBerryWiki</footer>
+    <footer v-if="configured" class="pp-foot">Powered by OneBerryWiki</footer>
   </div>
 </template>
 
@@ -95,13 +90,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { browser } from 'wxt/browser'
 import AgentAvatar from '@/components/AgentAvatar.vue'
+import LoginCard from '@/components/LoginCard.vue'
 import { listRecentKnowledge, type Knowledge } from '@/lib/api'
 import { activeTabId, sendClip } from '@/lib/clip'
 import { setPendingQuestion, setPendingTab } from '@/lib/pending'
 import { getSettings, isConfigured, saveSettings, webBaseUrl } from '@/lib/settings'
 import { cachedWorkspace, displayName, loadWorkspace, relativeTime, writableKnowledgeBases, type Workspace } from '@/lib/workspace'
 
-const logo = browser.runtime.getURL('/icon/128.png')
 const ready = ref(false)
 const configured = ref(false)
 const ws = ref<Workspace | null>(null)
@@ -124,6 +119,15 @@ const currentAgent = computed(() => ws.value?.agents.find((a) => a.id === agentI
 onMounted(async () => {
   // 打开侧边栏要在点击里同步调用，窗口 ID 先准备好
   windowId = (await browser.windows.getCurrent().catch(() => undefined))?.id
+  await init()
+})
+
+async function onLogin() {
+  error.value = ''
+  await init()
+}
+
+async function init() {
   const s = await getSettings()
   configured.value = isConfigured(s)
   baseUrl = s.baseUrl
@@ -136,7 +140,7 @@ onMounted(async () => {
   } catch (e) {
     if (!cached) error.value = (e as Error).message
   }
-})
+}
 
 function applyWorkspace(w: Workspace, defaultKb: string, defaultAgent: string) {
   ws.value = w
@@ -384,18 +388,7 @@ function openShortcuts() {
 
 .pp-send:disabled { background: var(--bw-brand-soft-2); color: color-mix(in srgb, var(--bw-brand) 50%, transparent); cursor: default; }
 
-.pp-welcome {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 24px 20px;
-  text-align: center;
-}
-
-.pp-welcome__logo { width: 48px; height: 48px; }
-.pp-welcome h1 { margin: 4px 0 0; font-size: 16px; }
-.pp-welcome p { margin: 0 0 6px; color: var(--bw-text-2); font-size: 13px; }
+.pp-login { width: 380px; min-height: 500px; }
 
 .pp-foot { color: var(--bw-text-3); font-size: 11px; text-align: center; }
 </style>

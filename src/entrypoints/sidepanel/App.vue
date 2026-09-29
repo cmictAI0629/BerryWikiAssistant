@@ -1,5 +1,8 @@
 <template>
-  <div class="sp">
+  <!-- 未登录：登录卡片铺满侧边栏 -->
+  <LoginCard v-if="ready && !configured" class="sp-login" @done="init" />
+
+  <div v-else class="sp">
     <header class="sp-head">
       <img class="sp-head__logo" :src="logo" alt="" />
       <div class="sp-tabs" role="tablist">
@@ -15,13 +18,7 @@
       </button>
     </header>
 
-    <div v-if="ready && !configured" class="sp-empty">
-      <img :src="logo" alt="" width="48" height="48" />
-      <h2>连接你的 OneBerryWiki</h2>
-      <p>填写服务器地址和 API Key 后就能开始提问和记速记。</p>
-      <button type="button" class="bw-btn bw-btn--primary" @click="openOptions">去设置</button>
-    </div>
-    <p v-else-if="error" class="sp-error">{{ error }}</p>
+    <p v-if="error" class="sp-error">{{ error }}</p>
 
     <main v-if="configured" class="sp-main">
       <ChatView v-show="tab === 'chat'" ref="chat" :agents="ws?.agents || []" :knowledge-bases="ws?.knowledgeBases || []"
@@ -36,6 +33,7 @@
 import { nextTick, onMounted, reactive, ref } from 'vue'
 import { browser } from 'wxt/browser'
 import ChatView from '@/components/chat/ChatView.vue'
+import LoginCard from '@/components/LoginCard.vue'
 import NoteView from '@/components/NoteView.vue'
 import { pendingQuestionItem, pendingTabItem, takePendingQuestion, takePendingTab, type SidePanelTab } from '@/lib/pending'
 import { DEFAULT_SETTINGS, getSettings, isConfigured, settingsItem } from '@/lib/settings'
@@ -131,16 +129,6 @@ function openOptions() {
 
 .sp-main { flex: 1; min-height: 0; }
 
-.sp-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 60px 24px;
-  text-align: center;
-}
-
-.sp-empty h2 { margin: 6px 0 0; font-size: 16px; }
-.sp-empty p { margin: 0 0 8px; color: var(--bw-text-2); font-size: 13px; }
+.sp-login { height: 100vh; }
 .sp-error { margin: 10px 14px 0; color: var(--bw-danger); font-size: 12px; }
 </style>

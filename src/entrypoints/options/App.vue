@@ -1,35 +1,35 @@
 <template>
-  <div class="op">
+  <!-- 未登录：页面正中一个和弹出面板一样的登录窗口 -->
+  <div v-if="ready && !configured" class="op-login">
+    <LoginCard class="op-login__window" @done="onLogin" />
+  </div>
+
+  <div v-else-if="ready" class="op">
     <header class="op-head">
-      <img :src="logo" alt="" width="40" height="40" />
+      <img :src="logo" alt="" width="36" height="36" />
       <div>
         <h1>BerryWiki 知识助手</h1>
-        <p>连接你自己部署的 OneBerryWiki，在浏览器里提问、剪藏、速记。版本 {{ version }}</p>
+        <p>版本 {{ version }}</p>
       </div>
     </header>
 
-    <section class="bw-card op-card">
-      <h2>连接 OneBerryWiki</h2>
-      <label class="bw-label" for="bw-url">服务器地址</label>
-      <input id="bw-url" v-model="form.baseUrl" class="bw-input" placeholder="例如 http://10.0.0.8:15481 或 https://wiki.example.com" />
-      <p class="op-hint">填网页地址或 API 地址都行，会自动补上 <code>/api/v1</code>。在 OneBerryWiki「设置 → API 信息」里可以复制。</p>
-
-      <label class="bw-label" for="bw-key">API Key</label>
-      <div class="op-key">
-        <input id="bw-key" v-model="form.apiKey" class="bw-input" :type="showKey ? 'text' : 'password'" placeholder="sk-…"
-          autocomplete="off" spellcheck="false" />
-        <button type="button" class="bw-btn" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
+    <!-- 账号 -->
+    <section class="bw-card op-account">
+      <span class="op-avatar">{{ initial }}</span>
+      <div class="op-account__who">
+        <b>{{ ws ? displayName(ws.me) : '正在连接…' }}</b>
+        <small>
+          <span v-if="ws?.me.tenant?.name">{{ ws.me.tenant.name }} · </span>
+          <a :href="web" target="_blank" rel="noopener noreferrer">{{ web }}</a>
+        </small>
+        <span v-if="error" class="op-state is-error">{{ error }}</span>
+        <span v-else-if="ws" class="op-state">
+          <i class="op-dot" />已连接 · {{ ws.knowledgeBases.length }} 个知识库 · {{ ws.agents.length }} 个智能体
+        </span>
       </div>
-      <p class="op-hint">
-        在「设置 → API 信息」新建一个 Key。建议单独给插件建一个，能力至少勾选<b>检索知识库、对话能力、写入知识库内容</b>，
-        也可以直接给完整权限。Key 只保存在这台电脑的浏览器里。
-      </p>
-
-      <div class="op-actions">
-        <button type="button" class="bw-btn bw-btn--primary" :disabled="testing" @click="testAndSave">
-          {{ testing ? '连接中…' : '保存并测试连接' }}
-        </button>
-        <span v-if="status" class="op-status" :class="{ 'is-error': statusError }">{{ status }}</span>
+      <div class="op-account__actions">
+        <a class="bw-btn" :href="web" target="_blank" rel="noopener noreferrer">打开 OneBerryWiki</a>
+        <button type="button" class="bw-btn" @click="signOut">{{ error ? '重新登录' : '退出登录' }}</button>
       </div>
     </section>
 
@@ -38,13 +38,13 @@
       <div class="op-grid">
         <div>
           <label class="bw-label" for="bw-kb">剪藏、速记默认保存到</label>
-          <select id="bw-kb" v-model="form.defaultKbId" class="bw-input" @change="saveDefaults">
+          <select id="bw-kb" v-model="defaults.defaultKbId" class="bw-input" @change="saveDefaults">
             <option v-for="kb in writableKbs" :key="kb.id" :value="kb.id">{{ kb.name }}</option>
           </select>
         </div>
         <div>
           <label class="bw-label" for="bw-agent">问答默认使用的智能体</label>
-          <select id="bw-agent" v-model="form.defaultAgentId" class="bw-input" @change="saveDefaults">
+          <select id="bw-agent" v-model="defaults.defaultAgentId" class="bw-input" @change="saveDefaults">
             <option v-for="a in ws.agents" :key="a.id" :value="a.id">{{ a.name }}</option>
           </select>
         </div>
@@ -71,74 +71,59 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { browser } from 'wxt/browser'
-import { getMe } from '@/lib/api'
-import { getSettings, normalizeBaseUrl, saveSettings, type Settings } from '@/lib/settings'
-import { clearWorkspaceCache, displayName, loadWorkspace, writableKnowledgeBases, type Workspace } from '@/lib/workspace'
+import LoginCard from '@/components/LoginCard.vue'
+import { logout, pickDefaults } from '@/lib/connect'
+import { getSettings, isConfigured, saveSettings, webBaseUrl } from '@/lib/settings'
+import { displayName, loadWorkspace, writableKnowledgeBases, type Workspace } from '@/lib/workspace'
 
 const logo = browser.runtime.getURL('/icon/128.png')
 const version = browser.runtime.getManifest().version
-const form = reactive<Settings>({ baseUrl: '', apiKey: '', defaultKbId: '', defaultAgentId: '' })
-const showKey = ref(false)
-const testing = ref(false)
-const status = ref('')
-const statusError = ref(false)
+const ready = ref(false)
+const configured = ref(false)
+const web = ref('')
+const error = ref('')
 const ws = ref<Workspace | null>(null)
+const defaults = reactive({ defaultKbId: '', defaultAgentId: '' })
 interface Command { name?: string; description?: string; shortcut?: string }
 const commands = ref<Command[]>([])
 
 const writableKbs = computed(() => writableKnowledgeBases(ws.value?.knowledgeBases || []))
+const initial = computed(() => [...(ws.value ? displayName(ws.value.me) : 'B')][0]?.toUpperCase() || 'B')
 
 onMounted(async () => {
-  Object.assign(form, await getSettings())
   commands.value = (await browser.commands.getAll()) as Command[]
-  if (form.baseUrl && form.apiKey) {
-    try {
-      ws.value = await loadWorkspace()
-      if (fillDefaults()) await saveDefaults()
-      status.value = `已连接：${displayName(ws.value.me)}${ws.value.me.tenant?.name ? ` · ${ws.value.me.tenant.name}` : ''}`
-    } catch (e) {
-      statusError.value = true
-      status.value = (e as Error).message
-    }
-  }
+  await init()
 })
 
-async function testAndSave() {
-  testing.value = true
-  status.value = ''
-  statusError.value = false
-  const candidate: Settings = { ...form, baseUrl: normalizeBaseUrl(form.baseUrl), apiKey: form.apiKey.trim() }
+async function init(loaded?: Workspace) {
+  const s = await getSettings()
+  configured.value = isConfigured(s)
+  web.value = webBaseUrl(s.baseUrl)
+  ready.value = true
+  if (!configured.value) return
+  error.value = ''
   try {
-    if (!candidate.baseUrl || !candidate.apiKey) throw new Error('请填写服务器地址和 API Key')
-    const me = await getMe(candidate) // 先验证，通过了才保存
-    Object.assign(form, candidate)
-    await saveSettings(candidate)
-    await clearWorkspaceCache()
-    ws.value = await loadWorkspace()
-    fillDefaults()
-    await saveDefaults()
-    status.value = `连接成功：${displayName(me)}${me.tenant?.name ? ` · ${me.tenant.name}` : ''}，可以看到 ${ws.value.knowledgeBases.length} 个知识库`
+    ws.value = loaded ?? (await loadWorkspace())
+    const picked = pickDefaults(ws.value, s.defaultKbId, s.defaultAgentId)
+    Object.assign(defaults, picked)
+    if (picked.defaultKbId !== s.defaultKbId || picked.defaultAgentId !== s.defaultAgentId) await saveDefaults()
   } catch (e) {
-    statusError.value = true
-    status.value = (e as Error).message
-  } finally {
-    testing.value = false
+    error.value = (e as Error).message
   }
 }
 
-/** 默认知识库、智能体没设或已经不存在时，补上第一个可写知识库和智能推理。返回是否有改动。 */
-function fillDefaults(): boolean {
-  const before = `${form.defaultKbId}|${form.defaultAgentId}`
-  if (!writableKbs.value.some((k) => k.id === form.defaultKbId)) form.defaultKbId = writableKbs.value[0]?.id || ''
-  const agents = ws.value?.agents || []
-  if (!agents.some((a) => a.id === form.defaultAgentId)) {
-    form.defaultAgentId = agents.find((a) => a.id === 'builtin-smart-reasoning')?.id || agents[0]?.id || ''
-  }
-  return before !== `${form.defaultKbId}|${form.defaultAgentId}`
+function onLogin(loaded: Workspace) {
+  void init(loaded)
+}
+
+async function signOut() {
+  await logout()
+  ws.value = null
+  await init()
 }
 
 async function saveDefaults() {
-  await saveSettings({ defaultKbId: form.defaultKbId, defaultAgentId: form.defaultAgentId })
+  await saveSettings({ ...defaults })
 }
 
 function openShortcuts() {
@@ -147,27 +132,82 @@ function openShortcuts() {
 </script>
 
 <style scoped>
+.op-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(60% 50% at 20% 10%, color-mix(in srgb, var(--bw-brand) 14%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 90% 90%, color-mix(in srgb, #38bdf8 14%, transparent), transparent 70%),
+    var(--bw-bg);
+}
+
+.op-login__window {
+  width: 400px;
+  min-height: 540px;
+  border-radius: 24px;
+  box-shadow: 0 30px 70px -30px rgba(8, 47, 73, 0.55), 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+
 .op { max-width: 720px; margin: 0 auto; padding: 32px 20px 48px; }
 
-.op-head { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
-.op-head h1 { margin: 0; font-size: 20px; }
-.op-head p { margin: 2px 0 0; color: var(--bw-text-2); font-size: 13px; }
+.op-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.op-head h1 { margin: 0; font-size: 19px; }
+.op-head p { margin: 0; color: var(--bw-text-3); font-size: 12px; }
+
+.op-account {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 20px 22px;
+  background:
+    radial-gradient(80% 120% at 0% 0%, color-mix(in srgb, var(--bw-brand) 12%, transparent), transparent 70%),
+    var(--bw-card);
+}
+
+.op-avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22d3ee, var(--bw-brand) 55%, var(--bw-brand-strong));
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 10px 22px -12px var(--bw-brand);
+}
+
+.op-account__who { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.op-account__who b { font-size: 16px; }
+.op-account__who small { overflow: hidden; color: var(--bw-text-2); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.op-account__who small a { color: inherit; text-decoration: none; }
+.op-account__who small a:hover { color: var(--bw-brand); }
+
+.op-state { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--bw-success); font-size: 12px; }
+.op-state.is-error { color: var(--bw-danger); }
+
+.op-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.op-account__actions { display: flex; flex-shrink: 0; gap: 8px; }
+.op-account__actions a { color: inherit; text-decoration: none; }
 
 .op-card { margin-bottom: 16px; padding: 20px 22px; }
 .op-card h2 { margin: 0 0 14px; font-size: 15px; }
-.op-card .bw-label { margin-top: 12px; }
 
-.op-hint { margin: 6px 0 0; color: var(--bw-text-3); font-size: 12px; }
-.op-hint code { padding: 0 4px; border-radius: 4px; background: var(--bw-brand-soft); }
+.op-hint { margin: 10px 0 0; color: var(--bw-text-3); font-size: 12px; }
 .op-hint a { color: var(--bw-brand); }
 
-.op-key { display: flex; gap: 8px; }
-.op-actions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
-.op-status { color: var(--bw-success); font-size: 13px; }
-.op-status.is-error { color: var(--bw-danger); }
-
 .op-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.op-grid .bw-label { margin-top: 0; }
 
 .op-keys { width: 100%; border-collapse: collapse; font-size: 13px; }
 .op-keys td { padding: 8px 0; border-bottom: 1px solid var(--bw-line); }
